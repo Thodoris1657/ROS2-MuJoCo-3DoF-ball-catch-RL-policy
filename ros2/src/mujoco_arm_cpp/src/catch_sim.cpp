@@ -593,6 +593,7 @@ CatchStep CatchSim::step(const Vec3& action) {
     d_->ctrl[i] = q_target_[i];
   }
 
+  const bool was_running = !outcome_.has_value();
   update_grip_anchor();
   for (int k = 0; k < frame_skip_; ++k) substep();
   if (policy) ++catch_steps_;
@@ -612,6 +613,25 @@ CatchStep CatchSim::step(const Vec3& action) {
   if (phase_ == "hold" && outcome_ && *outcome_ == "caught" && start_mode_ == "pick" && cfg_.return_ball)
     plan_return();
   if (phase_ == "fall" || phase_ == "rise") set_marker(ideal_catch_point());
+
+  // Reward. This is a copy of the reward block in BallCatchEnv.step() (Python), I kept
+  // the same order of operations so the numbers match (checked in test_cpp_backend.py).
+  double reward = 0.0;
+  if (policy) {
+    const Vec3 tip = ee_pos(), aim = ideal_catch_point();
+    const double err = std::sqrt((tip[0] - aim[0]) * (tip[0] - aim[0]) + (tip[1] - aim[1]) * (tip[1] - aim[1]) +
+                                 (tip[2] - aim[2]) * (tip[2] - aim[2]));
+    reward = -err + (1.0 - std::tanh(err / 0.02)) * (0.5 + 0.5 * (bounces_ > 0 ? 1.0 : 0.0));
+    if (bounces_ == 0) {
+      // the cup should stay above the ball while it is falling
+      const Vec3 bp = ball_pos();
+      const Vec3 rel{bp[0] - tip[0], bp[1] - tip[1], bp[2] - tip[2]};
+      if (std::hypot(rel[0], rel[1]) < 0.06) reward -= 20.0 * std::max(0.0, rel[2] + kContactDist + 0.015);
+    }
+    reward -= cfg_.action_cost * (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    if (phase_ == "hold") reward += cfg_.catch_bonus;                 // latched in the apex window
+    else if (was_running && outcome_) reward -= cfg_.fail_penalty;   // failed in this step
+  }
   prev_action_ = a;
 
   for (int i = 0; i < m_->nq; ++i)
@@ -625,6 +645,7 @@ CatchStep CatchSim::step(const Vec3& action) {
   if (phase_ == "return" && seg_i_ >= segments_.size()) out.terminated = true;
   out.truncated = !out.terminated && catch_steps_ >= max_episode_steps_;
   if (out.truncated && !outcome_) outcome_ = "timeout";
+  out.reward = reward;
   out.obs = observe();
   return out;
 }

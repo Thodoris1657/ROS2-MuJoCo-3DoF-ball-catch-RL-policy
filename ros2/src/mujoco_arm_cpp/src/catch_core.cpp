@@ -40,6 +40,9 @@ CatchConfig catch_config_from_json(const std::string& text, CatchConfig c) {
     else if (k == "hold_time") c.hold_time = v.get<double>();
     else if (k == "return_ball") c.return_ball = v.get<bool>();
     else if (k == "max_catch_seconds") c.max_catch_seconds = v.get<double>();
+    else if (k == "catch_bonus") c.catch_bonus = v.get<double>();
+    else if (k == "fail_penalty") c.fail_penalty = v.get<double>();
+    else if (k == "action_cost") c.action_cost = v.get<double>();
     else if (k == "gravity" || k == "start" || k == "render_mode") continue;  // node parameters
     else throw std::invalid_argument("unknown catch env kwarg '" + k + "'");
   }

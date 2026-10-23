@@ -12,8 +12,9 @@ used, so the result is not fitted to the benchmark.
     python scripts/tune_catch.py --gravity earth --generations 6 --episodes 48
     python scripts/tune_catch.py --backend cpp --pop 24 --generations 16 --episodes 256 --validate 4000
 
-``--backend cpp`` evaluates candidates with the C++ port (``catch_eval_params``, built by
-colcon or plain CMake from ros2/src/mujoco_arm_cpp) -- the same physics and controller, verified
+``--backend cpp`` evaluates candidates with the C++ port: in-process through the
+``mujoco_arm_cpp_py`` module if it is installed, otherwise with the ``catch_eval_params`` tool
+(built by colcon or plain CMake from ros2/src/mujoco_arm_cpp) -- the same physics and controller, verified
 step-for-step against Python by its parity tests, ~50x faster, so the optimiser can afford
 hundreds of trials per candidate and thousands for validation.
 
@@ -85,6 +86,19 @@ def evaluate_cpp(args) -> tuple[float, dict]:
     x, gravity, seeds, robust = args
     n = len(seeds)
     n_nom, n_str = (n // 2, n - n // 2) if robust else (n, 0)
+    try:
+        # preferred: call the C++ code in-process through the pybind11 module (no new process
+        # per candidate). It releases the GIL, so the ThreadPool workers run in parallel.
+        import mujoco_arm_cpp_py as cpp
+
+        from mujoco_arm_rl.envs.ballcatch import DEFAULT_MODEL_PATH, resolve_gravity
+
+        r = cpp.evaluate_params(str(DEFAULT_MODEL_PATH), to_params(x).to_dict(), resolve_gravity(gravity),
+                                n_nominal=n_nom, n_stress=n_str, seed0=int(seeds[0]), threads=1)
+        summ = {"episodes": r["trials"], "success": r["success"], "outcomes": r["outcomes"]}
+        return float(r["success"] + 0.01 * r["softness"]), summ
+    except ImportError:
+        pass  # module not built: fall back to the command line tool below
     out = subprocess.run([cpp_binary(), str(REPO), gravity, json.dumps(to_params(x).to_dict()),
                           str(int(seeds[0])), str(n_nom), str(n_str)],
                          check=True, capture_output=True, text=True).stdout

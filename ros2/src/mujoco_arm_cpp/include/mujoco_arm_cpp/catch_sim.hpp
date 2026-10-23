@@ -56,6 +56,10 @@ struct CatchConfig {
   double hold_time = 0.3;
   bool return_ball = false;
   double max_catch_seconds = 4.0;
+  // reward terms, same numbers as in ballcatch.py (only used when training)
+  double catch_bonus = 20.0;
+  double fail_penalty = 5.0;
+  double action_cost = 0.01;
   std::vector<double> gravity_choices{9.81};
   std::string start = "release";  // "release" | "pick"
 };
@@ -70,6 +74,7 @@ struct CatchResetOptions {
 
 struct CatchStep {
   CatchObs obs{};
+  double reward = 0.0;  // 0 outside of the catch phase, like in Python
   bool terminated = false;
   bool truncated = false;
 };
