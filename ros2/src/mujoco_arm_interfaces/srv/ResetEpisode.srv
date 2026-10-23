@@ -1,0 +1,12 @@
+# Start a new episode. Anything not pinned is sampled by the environment.
+bool use_target               # true: use `target`; false: sample a reachable one
+geometry_msgs/Point target
+bool use_qpos                 # true: use `qpos` as the start pose; false: sample
+float64[3] qpos               # joint1..3 start angles [rad]
+int64 seed                    # >= 0 reseeds the env RNG; -1 keeps the stream
+---
+bool success
+string message                # reason if success is false (e.g. unreachable target)
+uint32 episode
+geometry_msgs/Point target    # the target actually in use
+float32 distance              # initial tip-to-target distance [m]

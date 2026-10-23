@@ -17,3 +17,7 @@ tensordict>=0.4
 imageio[ffmpeg]>=2.31
 tensorboard>=2.14
 pytest>=7.4
+
+# Ball-catch videos / plots (scripts/render_catch.py)
+pillow>=9
+matplotlib>=3.6

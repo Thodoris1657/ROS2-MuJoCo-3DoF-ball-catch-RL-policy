@@ -1,0 +1,15 @@
+# Move the tip to `target` and hold it within `tolerance` for `hold_time`.
+# Something must be driving the arm (e.g. policy_node) for this to progress.
+geometry_msgs/Point target
+float32 tolerance             # [m]; 0 -> default 0.02
+float32 hold_time             # [s of sim time]; 0 -> default 0.5
+float32 timeout               # [s of sim time]; 0 -> default 10
+---
+bool success
+float32 final_distance        # [m]
+float32 time_to_reach         # [s of sim time] until first inside tolerance; -1 never
+string message
+---
+float32 distance              # [m]
+float32 elapsed               # [s of sim time] since the goal started
+float32 time_inside           # [s of sim time] continuously inside tolerance

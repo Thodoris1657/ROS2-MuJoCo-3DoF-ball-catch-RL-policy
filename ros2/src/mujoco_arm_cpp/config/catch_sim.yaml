@@ -1,0 +1,33 @@
+# Defaults for the nodes in launch/catch.launch.py (namespace /arm).
+# Launch arguments (gravity:=..., policy:=..., mode:=..., rtf:=...) override these.
+/arm/catch_sim_node:
+  ros__parameters:
+    gravity: "earth"          # earth | mars | moon | number; default for trials that do not name one
+    env_kwargs: "{}"          # JSON, e.g. '{"restitution": [0.7, 0.8], "obs_pos_noise": 0.002}'
+    model_path: ""            # "" = share/mujoco_arm_cpp/assets/arm3_ballcatch.xml
+    mode: "realtime"          # realtime | lockstep
+    real_time_factor: 1.0
+    action_timeout: 0.25
+    seed: -1
+    publish_markers: true
+    auto_start: false
+    start_from_pick: true
+    post_roll: 1.0
+
+/arm/policy_node:
+  ros__parameters:
+    policy: "catch_tuned"     # catch_tuned | catch_model | catch_hold | path/to/exported_policy.json
+    seed: 0
+
+/arm/catch_demo:
+  ros__parameters:
+    gravities: ["earth", "mars", "moon"]
+    start_from_pick: true
+    pause: 1.0
+    trials: 0                 # 0 = forever
+
+/arm/catch_eval_client:
+  ros__parameters:
+    per_gravity: 100
+    out: ""                   # e.g. catch_results_ros.json
+    timeout_s: 60.0

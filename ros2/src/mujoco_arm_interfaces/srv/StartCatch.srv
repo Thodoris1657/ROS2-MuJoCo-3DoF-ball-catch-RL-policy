@@ -1,0 +1,17 @@
+# Start a new pick-drop-catch trial. Anything not pinned is sampled by the simulator.
+string gravity                   # "earth" | "mars" | "moon" | a number in m/s^2 | "" = node parameter
+float32 restitution              # 0 = random in the simulator's range
+bool use_drop                    # true: release the ball under the cup at `drop`
+geometry_msgs/Point drop         # tip position at the release [m]
+bool use_push                    # true: pin the lateral release puff (benchmark replays)
+float64[2] push                  # [m/s] x, y velocity given to the ball at the release
+bool start_from_pick             # true: full trial (pick off the cube, carry, drop); false: start at the release
+int64 seed                       # >= 0 reseeds the simulator RNG; -1 keeps the stream
+---
+bool success
+string message                   # reason if success is false (e.g. unreachable drop point)
+uint32 trial
+string gravity_name
+float32 gravity
+float32 restitution
+geometry_msgs/Point drop

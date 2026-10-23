@@ -1,0 +1,126 @@
+<mujoco model="arm3_ballcatch">
+  <!-- Ball-catch scene for the SAME 3-DOF manipulator as arm3.xml (identical links,
+       joints, motors -- test_ballcatch.py checks the kinematics match).
+
+       Added: a pedestal cube with a ball resting on it, a bouncy floor contact for
+       the ball, and a latching "suction" grip at the end-effector, implemented as a
+       point (connect) equality that the environment switches on only when the ball touches the
+       end-effector slowly enough (see ballcatch.py). Gravity is set at run time
+       (Earth / Moon / Mars). -->
+
+  <compiler angle="radian" autolimits="true"/>
+  <!-- 1 ms step: the ball-floor contact lasts ~10 ms, so the bounce is resolved over
+       ~10 steps and the restitution is the same under all three gravities. -->
+  <option timestep="0.001" integrator="implicitfast" gravity="0 0 -9.81"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="140" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8"
+             width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.1"/>
+    <material name="metal"  rgba="0.55 0.58 0.62 1" specular="0.6" shininess="0.6"/>
+    <material name="accent" rgba="0.90 0.45 0.10 1" specular="0.4" shininess="0.4"/>
+    <material name="target" rgba="0.15 0.80 0.25 0.55"/>
+    <material name="ball"   rgba="0.95 0.55 0.10 1" specular="0.3" shininess="0.3"/>
+    <material name="cube"   rgba="0.25 0.35 0.75 1" specular="0.2"/>
+  </asset>
+
+  <default>
+    <joint type="hinge" damping="1.0" armature="0.1" limited="true" actuatorgravcomp="true"/>
+    <geom type="capsule" material="metal" density="1000" friction="0.6 0.005 0.0001"/>
+    <motor ctrlrange="-1 1" ctrllimited="true"/>
+  </default>
+
+  <worldbody>
+    <light name="spotlight" mode="targetbodycom" target="link3" pos="0 -1.5 2" cutoff="45"/>
+    <geom name="floor" type="plane" size="3 3 0.05" material="groundplane" contype="1" conaffinity="1"/>
+
+    <body name="base" pos="0 0 0.05">
+      <geom name="base_geom" type="cylinder" size="0.07 0.05" pos="0 0 0"/>
+
+      <body name="link1" gravcomp="1" pos="0 0 0.05">
+        <joint name="joint1" axis="0 0 1" range="-3.1416 3.1416"/>
+        <geom name="link1_geom" fromto="0 0 0 0 0 0.12" size="0.045"/>
+
+        <body name="link2" gravcomp="1" pos="0 0 0.12">
+          <joint name="joint2" axis="0 1 0" range="-2.0 2.0"/>
+          <geom name="link2_geom" fromto="0 0 0 0 0 0.25" size="0.038"/>
+
+          <body name="link3" gravcomp="1" pos="0 0 0.25">
+            <joint name="joint3" axis="0 1 0" range="-2.6 2.6"/>
+            <geom name="link3_geom" fromto="0 0 0 0 0 0.25" size="0.030"/>
+
+            <body name="ee" gravcomp="1" pos="0 0 0.25">
+              <geom name="ee_geom" type="sphere" size="0.035" material="accent"/>
+              <site name="tip" pos="0 0 0" size="0.012" rgba="1 0 0 1"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Predicted catch point (visual only, moved by the env). -->
+    <body name="target" mocap="true" pos="0.30 0.0 0.35">
+      <geom name="target_geom" type="sphere" size="0.012" material="target"
+            contype="0" conaffinity="0"/>
+      <site name="target_site" pos="0 0 0" size="0.006" rgba="0 1 0 1"/>
+    </body>
+
+    <!-- Pedestal: a 12 cm cube, top face at z = 0.12 m. -->
+    <body name="pedestal" pos="0.0 0.30 0.06">
+      <geom name="pedestal_geom" type="box" size="0.06 0.06 0.06" material="cube"/>
+    </body>
+
+    <!-- Tennis-ball sized rubber ball (r = 3.3 cm, 57 g), resting on the pedestal. -->
+    <body name="ball" pos="0.0 0.30 0.153">
+      <freejoint name="ball_free"/>
+      <geom name="ball_geom" type="sphere" size="0.033" mass="0.057" material="ball"
+            condim="6" friction="0.9 0.005 0.002"/>
+    </body>
+  </worldbody>
+
+  <!-- The base is welded to the world, so MuJoCo's automatic parent/child filter
+       does not cover it: without this exclude, link1's capsule sits 4.5 cm inside
+       the base cylinder and generates a permanent contact (and friction) on the
+       pan joint. -->
+  <contact>
+    <exclude body1="base" body2="link1"/>
+    <!-- Ball-floor: explicit spring-damper (solref < 0 = -stiffness, -damping).
+         ~10 ms contact; the env rewrites the damping per episode to set the
+         restitution (default 0.75, a tennis ball). -->
+    <pair name="ball_floor" geom1="ball_geom" geom2="floor" condim="6"
+          solref="-109551 -63.6" solimp="0.9 0.9 0.001" friction="0.9 0.9 0.005 0.002 0.002"/>
+    <!-- Ball-end-effector: less bouncy. A too-fast approach knocks the ball away. -->
+    <pair name="ball_ee" geom1="ball_geom" geom2="ee_geom" condim="6"
+          solref="-109551 -140" solimp="0.9 0.9 0.001" friction="0.9 0.9 0.005 0.002 0.002"/>
+  </contact>
+
+  <equality>
+    <!-- Gimballed suction grip: a point constraint holding the ball centre at an
+         anchor that the env keeps directly *below* the end-effector in the world
+         frame (it rewrites the anchor every control step), so the held ball hangs
+         like it would from a gimbal and its rotation stays free. Off at start; the
+         env activates it only when the ball touches the cup slowly enough. -->
+    <connect name="grip" body1="ee" body2="ball" anchor="0 0 -0.068" active="false" solref="0.004 1"/>
+  </equality>
+
+  <actuator>
+    <motor name="m1" joint="joint1" gear="20"/>
+    <motor name="m2" joint="joint2" gear="25"/>
+    <motor name="m3" joint="joint3" gear="15"/>
+  </actuator>
+
+  <sensor>
+    <framepos name="tip_pos" objtype="site" objname="tip"/>
+    <framepos name="target_pos" objtype="site" objname="target_site"/>
+    <framepos name="ball_pos" objtype="body" objname="ball"/>
+    <framelinvel name="ball_vel" objtype="body" objname="ball"/>
+  </sensor>
+</mujoco>

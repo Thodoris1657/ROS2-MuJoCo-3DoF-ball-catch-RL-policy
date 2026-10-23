@@ -432,10 +432,10 @@ class Reach3Env(gym.Env):
 
     def render(self):
         if self.render_mode == "human":
-            import mujoco.viewer
-
+            from mujoco import viewer as mj_viewer  # (a bare `import mujoco.viewer` here would
+            #                                            make `mujoco` local and break rgb_array)
             if self._viewer is None:
-                self._viewer = mujoco.viewer.launch_passive(
+                self._viewer = mj_viewer.launch_passive(
                     self.model, self.data, show_left_ui=False, show_right_ui=False
                 )
             if self._viewer.is_running():

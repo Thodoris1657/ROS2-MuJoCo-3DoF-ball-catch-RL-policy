@@ -1,0 +1,22 @@
+# Pick the ball off the cube, drop it, catch it at the top of the rebound.
+# Something has to drive the arm while the ball is in flight (policy_node with a catch policy).
+string gravity                   # "earth" | "mars" | "moon" | a number | "" = simulator parameter
+float32 restitution              # 0 = random
+bool use_drop
+geometry_msgs/Point drop
+bool start_from_pick             # false = skip the scripted pick + carry
+float32 timeout                  # [s of sim time]; 0 -> default 20
+---
+bool success
+string outcome                   # "caught", "missed: second bounce", "knocked the ball (...)", ...
+string gravity_name
+float32 restitution
+float32 catch_time_error         # [s], negative = before the apex
+float32 catch_height_error       # [m]
+float32 impact_speed             # [m/s]
+uint32 trial
+---
+string phase
+float32 ball_height              # [m]
+uint32 bounces
+float32 time_since_release       # [s]

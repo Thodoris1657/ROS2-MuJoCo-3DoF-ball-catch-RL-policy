@@ -1,0 +1,26 @@
+# Defaults for the nodes in launch/arm_rl.launch.py (namespace /arm).
+# Launch arguments (policy:=..., mode:=..., rtf:=...) override these.
+/arm/sim_node:
+  ros__parameters:
+    model_path: ""            # "" = share/mujoco_arm_cpp/assets/arm3.xml
+    env_config: ""            # env_config.json (or its folder) written by a training run
+    env_kwargs: "{}"          # JSON, e.g. '{"max_joint_speed": 6.0}'
+    mode: "realtime"          # realtime | lockstep
+    real_time_factor: 1.0
+    action_timeout: 0.25
+    episodic: false
+    seed: -1
+    publish_markers: true
+    start_paused: false
+
+/arm/policy_node:
+  ros__parameters:
+    policy: "oracle"          # oracle | random | path/to/exported_policy.json
+    seed: 0
+
+/arm/eval_client:
+  ros__parameters:
+    episodes: 100
+    control_hz: 25.0
+    out: ""                   # e.g. results_ros.json
+    timeout_s: 60.0
