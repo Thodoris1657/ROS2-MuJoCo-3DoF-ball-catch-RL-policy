@@ -29,3 +29,7 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+
+# C++ module build (pip install ./ros2/src/mujoco_arm_cpp)
+ros2/src/mujoco_arm_cpp/build/
+*.so

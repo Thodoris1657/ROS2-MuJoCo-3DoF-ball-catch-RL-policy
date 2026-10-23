@@ -1,0 +1,28 @@
+# Python package with only the C++ module (mujoco_arm_cpp_py), built with scikit-build-core.
+# It is separate from the main `mujoco-arm-rl` package on purpose: the main package stays pure
+# Python (no compiler needed), and this one is optional.
+#
+#   pip install scikit-build-core pybind11
+#   pip install --no-build-isolation ./ros2/src/mujoco_arm_cpp
+#
+# --no-build-isolation is important: CMake asks the *current* Python where the `mujoco` wheel
+# is and links its libmujoco.so, so the module uses the same physics as the rest of the code.
+# (colcon ignores this file, it builds the ROS package from package.xml as before.)
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "mujoco-arm-cpp-py"
+version = "0.1.0"
+description = "C++ ball-catch simulator / batch env for mujoco-arm-rl (pybind11)"
+requires-python = ">=3.9"
+dependencies = ["numpy", "mujoco>=3.1"]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages = []
+build-dir = "build/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+MUJOCO_ARM_TESTS = "OFF"

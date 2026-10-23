@@ -15,10 +15,13 @@ add_compile_options(-Wno-maybe-uninitialized -Wno-uninitialized)
 # nodes run *exactly* the physics library the Python training / benchmarks used.
 # Override with -DMUJOCO_INCLUDE_DIR=... -DMUJOCO_LIBRARY=... (e.g. a release tarball).
 if(NOT MUJOCO_INCLUDE_DIR OR NOT MUJOCO_LIBRARY)
-  find_package(Python3 COMPONENTS Interpreter)
   if(DEFINED ENV{MUJOCO_PYTHON})
     set(_mj_py $ENV{MUJOCO_PYTHON})
+  elseif(SKBUILD AND Python_EXECUTABLE)
+    # pip install of the Python module: use the interpreter pip is running for
+    set(_mj_py ${Python_EXECUTABLE})
   else()
+    find_package(Python3 COMPONENTS Interpreter)
     set(_mj_py ${Python3_EXECUTABLE})
   endif()
   execute_process(
@@ -44,11 +47,12 @@ get_filename_component(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ABSOLUTE)
 # ---------------------------------------------------------- core library
 add_library(mujoco_arm_core
   src/arm_model.cpp src/catch_sim.cpp src/catch_controller.cpp src/reach_sim.cpp src/policies.cpp
-  src/catch_core.cpp)
+  src/catch_core.cpp src/batch.cpp)
 target_include_directories(mujoco_arm_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
   ${MUJOCO_INCLUDE_DIR})
-target_link_libraries(mujoco_arm_core PUBLIC ${MUJOCO_LIBRARY} nlohmann_json::nlohmann_json)
+find_package(Threads REQUIRED)
+target_link_libraries(mujoco_arm_core PUBLIC ${MUJOCO_LIBRARY} nlohmann_json::nlohmann_json Threads::Threads)
 set_target_properties(mujoco_arm_core PROPERTIES POSITION_INDEPENDENT_CODE ON
   BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
 
@@ -79,7 +83,30 @@ if(MUJOCO_ARM_TESTS)
   endif()
 endif()
 
+# -------------------------------------------------------- Python module
+# pybind11 bindings (python/bindings.cpp). Built by `pip install ./ros2/src/mujoco_arm_cpp`
+# (scikit-build-core sets SKBUILD) or by hand with -DMUJOCO_ARM_PYTHON=ON.
+option(MUJOCO_ARM_PYTHON "build the mujoco_arm_cpp_py Python module" OFF)
+if(MUJOCO_ARM_PYTHON OR SKBUILD)
+  if(NOT pybind11_DIR)
+    execute_process(COMMAND ${_mj_py} -c "import pybind11; print(pybind11.get_cmake_dir())"
+                    OUTPUT_VARIABLE pybind11_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+  find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+  find_package(pybind11 CONFIG REQUIRED)
+  pybind11_add_module(mujoco_arm_cpp_py python/bindings.cpp)
+  target_link_libraries(mujoco_arm_cpp_py PRIVATE mujoco_arm_core)
+  # the module finds libmujoco.so in the mujoco wheel it was built against
+  set_target_properties(mujoco_arm_cpp_py PROPERTIES BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
+  if(SKBUILD)
+    install(TARGETS mujoco_arm_cpp_py LIBRARY DESTINATION .)
+  endif()
+endif()
+
 # ------------------------------------------------------------- ROS nodes
+if(SKBUILD)
+  return()  # pip build of the Python module only, never the ROS nodes
+endif()
 find_package(ament_cmake QUIET)
 if(NOT ament_cmake_FOUND)
   message(STATUS "ament_cmake not found: building the ROS-free core only")
