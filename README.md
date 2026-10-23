@@ -335,6 +335,34 @@ draws come from a different RNG), residual 100 % on all six, pure SAC 57/81/75 a
 straight for the apex sometimes works; on Mars and the Moon the arm outruns the ball and hits
 it from above, every time.
 
+### C++ backend for Python (pybind11)
+
+The C++ simulator can also be used from Python (`mujoco_arm_cpp_py`), mainly for training and tuning:
+
+```bash
+pip install scikit-build-core pybind11
+pip install --no-build-isolation ./ros2/src/mujoco_arm_cpp     # builds python/bindings.cpp
+python scripts/train_catch_sb3.py --backend cpp --n-envs 8 --residual 0.2 --out runs/catch_residual_cpp
+python scripts/tune_catch.py --backend cpp ...                  # now evaluates in-process
+pytest -q tests/test_cpp_backend.py                             # parity with BallCatchEnv
+```
+
+`CatchBatch` steps N simulators in a thread pool with same-step autoreset; `catch_vec.py`
+wraps it as a gymnasium-style vector env and as an SB3 `VecEnv`. The reward was ported to
+C++ and the tests check that observations and rewards match the Python env step by step.
+
+Measured on 2 CPU cores (env steps per second):
+
+| | Python env | C++ batch, 1 thread | C++ batch, 16 envs / 2 threads |
+| --- | --- | --- | --- |
+| plain env (random actions) | 4 769 | 11 956 (2.5x) | 19 263 (4.0x) |
+| residual env (controller runs every step) | 2 340 | 11 118 (4.8x) | 18 417 (7.9x) |
+
+Most of the plain-env time is MuJoCo itself, which Python was already calling in C, so the
+gain there is smaller; with the controller in the loop the gain is larger. For SAC the
+gradient updates are still the main cost, so `--utd` (gradient steps per transition) is the
+knob that decides the end-to-end training time.
+
 ### Bugs found on the way
 
 - **Per-joint action clipping bent the cup's path** — "straight up, away from the ball"
@@ -384,6 +412,7 @@ mujoco-arm-rl/
 │   ├── envs/__init__.py            registers MujocoArm3Reach-v1, -v0 and MujocoArm3BallCatch-v0
 │   ├── catching.py                 model-based catch controller (estimate, predict, plan, track)
 │   ├── catch_eval.py               catch roll-outs, scoring, frozen sets
+│   ├── envs/catch_vec.py           vectorised env on the C++ CatchBatch (gymnasium / SB3)
 │   ├── policies.py                 load SB3 / TorchRL / oracle / random behind one API
 │   ├── benchmark.py                rollouts, metrics, stratified bootstrap
 │   └── utils.py
@@ -404,7 +433,7 @@ mujoco-arm-rl/
 ├── media/                          videos + height plot of a full trial per gravity
 ├── ros2/                           C++ ROS 2 bridge (reach + ball catch), see ros2/README.md
 │   └── src/mujoco_arm_cpp/         MuJoCo C API ports, controller, MLP runtime, 9 nodes, tests
-└── tests/                          test_env.py (16) + test_ballcatch.py (18)
+└── tests/                          test_env.py (16) + test_ballcatch.py (18) + test_cpp_backend.py (8)
 ```
 
 ## License
