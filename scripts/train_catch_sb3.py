@@ -18,6 +18,19 @@ Two policy types:
     --residual 0      pure RL: the network outputs the action
     --residual 0.3    residual RL: action = clip(catch_tuned(obs) + 0.3 * network), see residual.py
 
+Two backends for the training env:
+
+    --backend python   BallCatchEnv (default, one env)
+    --backend cpp      CatchBatch from the C++ module, --n-envs simulators stepped in C++
+                       threads (needs: pip install --no-build-isolation ./ros2/src/mujoco_arm_cpp)
+
+    python scripts/train_catch_sb3.py --backend cpp --n-envs 8 --residual 0.2 --out runs/catch_residual_cpp
+
+With N envs every env.step() gives N transitions. --utd (updates per transition, default 1)
+sets how many gradient steps SAC does per vector step (round(utd * N)); utd = 1 is the same
+update-to-data ratio as the single-env run. Evaluation always uses the Python env, so the
+numbers of both backends can be compared directly.
+
 ``--train-set stress`` (default) trains on the wide distribution (restitution 0.55-0.90,
 2x release puff, 3x sensor noise), which contains the nominal one; held-out evaluation
 during training uses both.
@@ -57,12 +70,17 @@ def main() -> None:
     ap.add_argument("--base", default="catch_tuned", choices=["catch_tuned", "catch_model"])
     ap.add_argument("--train-set", default="stress", choices=["nominal", "stress"])
     ap.add_argument("--ent-coef", default="auto")
+    ap.add_argument("--backend", default="python", choices=["python", "cpp"])
+    ap.add_argument("--n-envs", type=int, default=8, help="cpp backend: simulators per batch")
+    ap.add_argument("--env-threads", type=int, default=0, help="cpp backend: worker threads (0 = all cores)")
+    ap.add_argument("--utd", type=float, default=1.0, help="gradient steps per collected transition")
     args = ap.parse_args()
 
     import torch
     from stable_baselines3 import SAC
     from stable_baselines3.common.callbacks import BaseCallback
     from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import VecMonitor
 
     torch.set_num_threads(args.threads)
     out = Path(args.out)
@@ -78,9 +96,21 @@ def main() -> None:
 
     from mujoco_arm_rl.residual import ResidualCatchEnv, ResidualPolicy
 
-    base_env = BallCatchEnv(**env_kwargs)
-    train_env = ResidualCatchEnv(base_env, args.base, args.residual) if residual else base_env
-    env = Monitor(train_env, info_keywords=("is_success",))
+    if args.backend == "cpp":
+        from mujoco_arm_rl.envs.catch_vec import make_sb3_vec_env
+
+        if residual and args.base != "catch_tuned":
+            raise SystemExit("the cpp backend residual mode uses catch_tuned as the base controller")
+        env = VecMonitor(make_sb3_vec_env(args.n_envs, env_kwargs, seed=args.seed, threads=args.env_threads,
+                                          residual_scale=args.residual if residual else 0.0),
+                         info_keywords=("is_success",))
+        n_envs = args.n_envs
+    else:
+        base_env = BallCatchEnv(**env_kwargs)
+        train_env = ResidualCatchEnv(base_env, args.base, args.residual) if residual else base_env
+        env = Monitor(train_env, info_keywords=("is_success",))
+        n_envs = 1
+    grad_steps = max(1, round(args.utd * n_envs))
     eval_envs = {"nominal": BallCatchEnv(gravity="random"),
                  "stress": BallCatchEnv(gravity="random", **STRESS_KWARGS)}
     eval_seeds = {g: [10_000 + 97 * i + j for i in range(args.eval_episodes)]
@@ -92,10 +122,13 @@ def main() -> None:
             self.best = -1.0
             self.log = []
             self.t0 = time.time()
+            self.next_eval = args.eval_every
 
         def _on_step(self) -> bool:
-            if self.n_calls % args.eval_every:
+            # with N envs num_timesteps grows by N per call, so compare against the counter
+            if self.num_timesteps < self.next_eval:
                 return True
+            self.next_eval += args.eval_every
             if residual:
                 pol = ResidualPolicy(self.model, args.base, args.residual)
             else:
@@ -106,7 +139,8 @@ def main() -> None:
                     res = [run_episode(eval_env, pol, s, {"gravity": g}) for s in seeds]
                     rates[f"{set_name}_{g}"] = float(np.mean([r.success for r in res]))
             mean = float(np.mean(list(rates.values())))
-            row = dict(steps=self.num_timesteps, minutes=(time.time() - self.t0) / 60, mean=mean, **rates)
+            row = dict(steps=self.num_timesteps, minutes=(time.time() - self.t0) / 60, mean=mean,
+                       backend=args.backend, n_envs=n_envs, **rates)
             self.log.append(row)
             (out / "eval_log.json").write_text(json.dumps(self.log, indent=2))
             print(f"[eval] {self.num_timesteps:>7d} steps  " + "  ".join(
@@ -119,11 +153,14 @@ def main() -> None:
 
     ent = args.ent_coef if args.ent_coef == "auto" or args.ent_coef.startswith("auto") else float(args.ent_coef)
     model = SAC("MlpPolicy", env, learning_rate=args.lr, gamma=args.gamma, batch_size=args.batch, ent_coef=ent,
-                buffer_size=1_000_000, learning_starts=5_000, train_freq=1, gradient_steps=1,
+                buffer_size=1_000_000, learning_starts=5_000, train_freq=1, gradient_steps=grad_steps,
                 policy_kwargs=dict(net_arch=args.net), seed=args.seed, verbose=0, device="cpu")
+    t_start = time.time()
     model.learn(total_timesteps=args.timesteps, callback=EvalCatch(), log_interval=50)
     model.save(out / "final_model")
-    print(f"saved to {out}")
+    minutes = (time.time() - t_start) / 60
+    print(f"saved to {out}  ({args.timesteps} steps in {minutes:.1f} min, backend {args.backend}, "
+          f"{n_envs} env(s), {grad_steps} gradient step(s) per env.step)")
 
 
 if __name__ == "__main__":
